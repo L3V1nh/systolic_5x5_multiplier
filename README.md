@@ -131,10 +131,10 @@ Execute the following instructions from your terminal interface to compile the h
 
 ```bash
 # Compile design modules and testbench
-iverilog -o systolic_sim src/BoothMultiplier.v src/PE.v src/systolic.v sim/systolic_tb.v
+iverilog -o systolic_sim.vvp src/BoothMultiplier.v src/PE.v src/systolic.v sim/systolic_tb.v
 
 # Execute simulation binary to generate VCD log and console output
-vvp systolic_sim
+vvp systolic_sim.vvp
 ```
 
 To examine the behavioral waveform characteristics, open the generated dump file:
