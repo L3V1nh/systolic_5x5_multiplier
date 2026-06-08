@@ -48,83 +48,94 @@ endmodule
 module systolic(
     input wire clk,
     input wire rst,
+    input wire wrt_en, // High when new data is being streamed in
     input wire signed [7:0] raw_row_0, raw_row_1, raw_row_2, raw_row_3, raw_row_4,
     input wire signed [7:0] raw_col_0, raw_col_1, raw_col_2, raw_col_3, raw_col_4,
     
     output wire signed [399:0] matrix_out,
     output reg valid_out
 );
-    initial valid_out = 0;
-    // Row delay chains
+
+    // 1. Existing Row/Column Skewing Registers
     reg signed [7:0] r1_d1;
-    
     reg signed [7:0] r2_d1, r2_d2;
-    
     reg signed [7:0] r3_d1, r3_d2, r3_d3;
-    
     reg signed [7:0] r4_d1, r4_d2, r4_d3, r4_d4;
 
-    // Column delay chains
     reg signed [7:0] c1_d1;
-    
     reg signed [7:0] c2_d1, c2_d2;
-    
     reg signed [7:0] c3_d1, c3_d2, c3_d3;
-    
     reg signed [7:0] c4_d1, c4_d2, c4_d3, c4_d4;
+
+    // 2. Hardware Flush Tracking (Tracking the valid wavefront)
+    // We create a delay chain for the wrt_en signal itself!
+    reg v0, v1, v2, v3, v4;
+    reg v1_d1;
+    reg v2_d1, v2_d2;
+    reg v3_d1, v3_d2, v3_d3;
+    reg v4_d1, v4_d2, v4_d3, v4_d4;
 
     always @(posedge clk) begin
         if (rst) begin
-            // Clear the pipeline registers on reset
-            r1_d1 <= 8'd0;
-            r2_d1 <= 8'd0; r2_d2 <= 8'd0;
-            r3_d1 <= 8'd0; r3_d2 <= 8'd0; r3_d3 <= 8'd0;
-            r4_d1 <= 8'd0; r4_d2 <= 8'd0; r4_d3 <= 8'd0; r4_d4 <= 8'd0;
+            // Clear data delay pipelines
+            r1_d1 <= 0; r2_d1 <= 0; r2_d2 <= 0;
+            r3_d1 <= 0; r3_d2 <= 0; r3_d3 <= 0;
+            r4_d1 <= 0; r4_d2 <= 0; r4_d3 <= 0; r4_d4 <= 0;
 
-            c1_d1 <= 8'd0;
-            c2_d1 <= 8'd0; c2_d2 <= 8'd0;
-            c3_d1 <= 8'd0; c3_d2 <= 8'd0; c3_d3 <= 8'd0;
-            c4_d1 <= 8'd0; c4_d2 <= 8'd0; c4_d3 <= 8'd0; c4_d4 <= 8'd0;
-            
+            c1_d1 <= 0; c2_d1 <= 0; c2_d2 <= 0;
+            c3_d1 <= 0; c3_d2 <= 0; c3_d3 <= 0;
+            c4_d1 <= 0; c4_d2 <= 0; c4_d3 <= 0; c4_d4 <= 0;
+
+            // Clear execution tracking pipelines
+            v1_d1 <= 0; v2_d1 <= 0; v2_d2 <= 0;
+            v3_d1 <= 0; v3_d2 <= 0; v3_d3 <= 0;
+            v4_d1 <= 0; v4_d2 <= 0; v4_d3 <= 0; v4_d4 <= 0;
+
             valid_out <= 1'b0;
         end else begin
-            // Shift values through the register chains every clock cycle
-            // Row Skewing
+            // Pure Bucket Brigade Shifting
             r1_d1 <= raw_row_1;
-            
-            r2_d1 <= raw_row_2;
-            r2_d2 <= r2_d1;  
-            
-            r3_d1 <= raw_row_3;
-            r3_d2 <= r3_d1;
-            r3_d3 <= r3_d2; 
-            
-            r4_d1 <= raw_row_4;
-            r4_d2 <= r4_d1;
-            r4_d3 <= r4_d2;
-            r4_d4 <= r4_d3;  
+            r2_d1 <= raw_row_2; r2_d2 <= r2_d1;
+            r3_d1 <= raw_row_3; r3_d2 <= r3_d1; r3_d3 <= r3_d2;
+            r4_d1 <= raw_row_4; r4_d2 <= r4_d1; r4_d3 <= r4_d2; r4_d4 <= r4_d3;
 
-            
-            c1_d1 <= raw_col_1; 
-            
-            c2_d1 <= raw_col_2;
-            c2_d2 <= c2_d1;     
-            c3_d1 <= raw_col_3;
-            c3_d2 <= c3_d1;
-            c3_d3 <= c3_d2;  
-            
-            c4_d1 <= raw_col_4;
-            c4_d2 <= c4_d1;
-            c4_d3 <= c4_d2;
-            c4_d4 <= c4_d3;
-            
-            valid_out <= 1'b1; 
+            c1_d1 <= raw_col_1;
+            c2_d1 <= raw_col_2; c2_d2 <= c2_d1;
+            c3_d1 <= raw_col_3; c3_d2 <= c3_d1; c3_d3 <= c3_d2;
+            c4_d1 <= raw_col_4; c4_d2 <= c4_d1; c4_d3 <= c4_d2; c4_d4 <= c4_d3;
+
+            // Shift wrt_en along with the rows to track when data waves actually exit
+            v1_d1 <= wrt_en;
+            v2_d1 <= wrt_en; v2_d2 <= v2_d1;
+            v3_d1 <= wrt_en; v3_d2 <= v3_d1; v3_d3 <= v3_d2;
+            v4_d1 <= wrt_en; v4_d2 <= v4_d1; v4_d3 <= v4_d2; v4_d4 <= v4_d3;
+
+            // valid_out goes high when the very last valid element has trickled 
+            // through the longest pipeline delay register chain.
+            valid_out <= v4_d4; 
         end
     end
 
-    wire signed [39:0] grid_row_bus = { r4_d4, r3_d3, r2_d2, r1_d1, raw_row_0 };
-    wire signed [39:0] grid_col_bus = { c4_d4, c3_d3, c2_d2, c1_d1, raw_col_0 };
+    // 3. Tail Guarding Multiplexers
+    // If wrt_en or the tracked lane valid bit is low, we force 0 into the grid.
+    // This protects the grid inputs if the outside bus floats or stays dirty.
+    wire signed [7:0] grid_r0 = (wrt_en) ? raw_row_0 : 8'sd0;
+    wire signed [7:0] grid_r1 = (v1_d1)  ? r1_d1     : 8'sd0;
+    wire signed [7:0] grid_r2 = (v2_d2)  ? r2_d2     : 8'sd0;
+    wire signed [7:0] grid_r3 = (v3_d3)  ? r3_d3     : 8'sd0;
+    wire signed [7:0] grid_r4 = (v4_d4)  ? r4_d4     : 8'sd0;
 
+    wire signed [7:0] grid_c0 = (wrt_en) ? raw_col_0 : 8'sd0;
+    wire signed [7:0] grid_c1 = (v1_d1)  ? c1_d1     : 8'sd0;
+    wire signed [7:0] grid_c2 = (v2_d2)  ? c2_d2     : 8'sd0;
+    wire signed [7:0] grid_c3 = (v3_d3)  ? c3_d3     : 8'sd0;
+    wire signed [7:0] grid_c4 = (v4_d4)  ? c4_d4     : 8'sd0;
+
+    // Bundle clean, protected streams into the grid bus
+    wire signed [39:0] grid_row_bus = { grid_r4, grid_r3, grid_r2, grid_r1, grid_r0 };
+    wire signed [39:0] grid_col_bus = { grid_c4, grid_c3, grid_c2, grid_c1, grid_c0 };
+
+    // 4. Instantiate Grid
     systolic_grid u_grid (
         .clk(clk),
         .rst(rst),
@@ -132,4 +143,5 @@ module systolic(
         .col(grid_col_bus), 
         .matrix_out(matrix_out)
     );
+
 endmodule
