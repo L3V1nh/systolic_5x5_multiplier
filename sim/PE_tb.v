@@ -7,21 +7,25 @@ module PE_tb();
     initial clk =0 ;
     always #5 clk = ~clk;
     reg rst;
-    wire signed [23:0] out;
+    wire signed [7:0] row_out;
+    wire signed [7:0] col_out;
+    wire signed [15:0] out;
 
     processing_element uut(
+        .clk(clk),
+        .rst(rst),
         .row(row),
         .col(col),
-        .rst(rst),
-        .clk(clk),
+        .row_out(row_out),
+        .col_out(col_out),
         .out(out)
     );
 
     initial begin
         $dumpfile("PE_tb.vcd");
         $dumpvars(0, PE_tb);
-        $display("time\tclk\trst\trow\tcol\tout");
-        $monitor("%0t\t%b\t%b\t%0d\t%0d\t%0d", $time, clk, rst, row, col, out);
+        $display("time\tclk\trst\trow\tcol\trow_out\tcol_out\tout");
+        $monitor("%0t\t%b\t%b\t%0d\t%0d\t%0d\t%0d\t%0d", $time, clk, rst, row, col, row_out, col_out, out);
 
         // Reset
         rst = 1;
