@@ -13,6 +13,8 @@ module axi_tb ();
     localparam logic [31:0] A_BASE = 32'h100;
     localparam logic [31:0] B_BASE = A_BASE + (N * N * 4);
     localparam logic [31:0] CONTROL = 32'h0;
+    localparam logic [31:0] STATUS = 32'h4;
+    localparam logic [31:0] C_BASE = B_BASE + (N * N * 4);
 
     function automatic logic [31:0] matrix_addr(
         input logic [31:0] base,
@@ -51,6 +53,29 @@ module axi_tb ();
             @(posedge axi.clk);
             #1;
             axi.bready = 1'b0;
+        end
+    endtask
+
+    task automatic axi_read(
+        input logic [31:0] addr,
+        output logic [31:0] data,
+        output logic [1:0] resp
+    );
+        begin
+            @(negedge axi.clk);
+            axi.araddr  = addr;
+            axi.arvalid = 1'b1;
+            axi.rready  = 1'b1;
+
+            wait (axi.arready);
+            @(posedge axi.clk);
+            #1 axi.arvalid = 1'b0;
+
+            wait (axi.rvalid);
+            data = axi.rdata;
+            resp = axi.rresp;
+            @(posedge axi.clk);
+            #1 axi.rready = 1'b0;
         end
     endtask
 
@@ -99,6 +124,9 @@ module axi_tb ();
     );
 
     initial begin
+            logic [31:0] read_data;
+            logic [1:0] read_resp;
+
         axi.rst = 1;
         axi.clk = 0;
         axi.awaddr = '0;
@@ -117,18 +145,21 @@ module axi_tb ();
         axi_write(CONTROL, 32'h1);
 
         wait (dut.done_reg);
-        #20;
-        // $display("==================================");
-        // $display("Matrix C");
 
-        // for (int i = 0; i < N; i++) begin
-        //     for (int j = 0; j < N; j++) begin
-        //         $write("%0d ", $signed(dut.matrix_c[i][j]));
-        //     end
-        //     $write("\n");
-        // end
+        axi_read(STATUS, read_data, read_resp);
+        $display("STATUS: data=0x%08h resp=%b", read_data, read_resp);
 
-        // $display("==================================");
+        $display("Matrix C");
+        for (int i = 0; i < N; i++) begin
+            for (int j = 0; j < N; j++) begin
+                axi_read(matrix_addr(C_BASE, i, j), read_data, read_resp);
+                matrix_c[i][j] = $signed(read_data[ACC_W-1:0]);
+                $write("%4d ", $signed(matrix_c[i][j]));
+            end
+            $write("\n");
+        end
+
+        #5;
         $finish;
     end
 endmodule

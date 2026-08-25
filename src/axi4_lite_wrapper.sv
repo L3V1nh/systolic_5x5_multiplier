@@ -55,11 +55,6 @@ module axi4_lite_wrapper #(
     localparam logic [31:0] B_BASE = A_BASE + MAT_SIZE_BYTES;
     localparam logic [31:0] C_BASE = B_BASE + MAT_SIZE_BYTES;
 
-    assign axi.arready = 1'b0;
-    assign axi.rdata   = 32'h0;
-    assign axi.rresp   = 2'b00;
-    assign axi.rvalid  = 1'b0;
-
     function automatic int addr_to_idx(
         input logic [31:0] addr,
         input logic [31:0] base
@@ -79,6 +74,7 @@ module axi4_lite_wrapper #(
     end
     endfunction
 
+    // AXI WRITE
     typedef enum logic [1:0] {
         W_IDLE,
         W_COMMIT,
@@ -93,7 +89,7 @@ module axi4_lite_wrapper #(
     assign aw_handshake = axi.awvalid && axi.awready;
     assign w_handshake  = axi.wvalid && axi.wready;
 
-    always_ff @(posedge axi.clk) begin: state_register
+    always_ff @(posedge axi.clk) begin: Wstate_register
         if (axi.rst) begin
             wstate <= W_IDLE;
 
@@ -126,7 +122,7 @@ module axi4_lite_wrapper #(
         end
     end
 
-    always_comb begin : state_transition
+    always_comb begin : Wstate_transition
         wstate_next = wstate;
         case (wstate)
             W_IDLE: begin
@@ -204,6 +200,69 @@ module axi4_lite_wrapper #(
         end
     end
 
+    //  AXI READ
+    typedef enum logic [1:0] {
+        R_IDLE,
+        R_COMMIT,
+        R_RESP
+    } Rstate_t;
+
+    Rstate_t rstate, rstate_next;
+    logic [31:0] raddr_reg, rdata_reg;
+    logic [1:0] rresp_reg;
+    logic ar_handshake, r_handshake;
+    assign ar_handshake = axi.arvalid && axi.arready;
+    assign r_handshake = axi.rvalid && axi.rready;
+
+    always_ff @(posedge axi.clk) begin: Rstate_register
+        if (axi.rst) begin
+            rstate <= R_IDLE;
+            raddr_reg <= '0;
+            rdata_reg <= '0;
+            rresp_reg <= 2'b00;
+        end
+        else begin
+            rstate <= rstate_next;
+            if (ar_handshake) begin
+                raddr_reg <= axi.araddr;
+            end
+            if (rstate == R_COMMIT) begin
+                rdata_reg <= 32'h0;
+                rresp_reg <= 2'b00;
+                if (raddr_reg == STATUS) begin
+                    rdata_reg <= {31'b0, done_reg};
+                end
+                else if (in_range(raddr_reg, C_BASE, MAT_SIZE_BYTES)) begin
+                    rdata_reg <= $signed(matrix_c[
+                        addr_to_idx(raddr_reg, C_BASE) / N
+                    ][
+                        addr_to_idx(raddr_reg, C_BASE) % N
+                    ]);
+                end
+                else begin
+                    rresp_reg <= 2'b11;
+                end
+            end
+        end
+    end
+
+    always_comb begin: Rstate_transition
+        rstate_next = rstate;
+        case (rstate)
+            R_IDLE: if (ar_handshake) rstate_next = R_COMMIT;
+            R_COMMIT: rstate_next = R_RESP;
+            R_RESP: if (r_handshake) rstate_next = R_IDLE;
+        endcase
+    end
+
+    always_comb begin: read_response
+        axi.arready = (rstate == R_IDLE);
+        axi.rvalid = (rstate == R_RESP);
+        axi.rdata = rdata_reg;
+        axi.rresp = rresp_reg;
+    end
+
+    // MODULE INSTANTIATION
     matrix_accel #(
         .N(N),
         .DATA_W(DATA_W),
